@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple HTTP Server</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .header {
+            background: #f4f4f4;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .api-section {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Welcome to Simple HTTP Server</h1>
+        <p>This server is built with pure Java Socket API</p>
+    </div>
+
+    <h2>Features</h2>
+    <ul>
+        <li>✅ Pure Java Socket implementation (no frameworks)</li>
+        <li>✅ GET and POST method support</li>
+        <li>✅ HTTP/1.1 with keep-alive connections</li>
+        <li>✅ Multiple status codes (200, 301, 302, 304, 404, 405, 500)</li>
+        <li>✅ Multiple MIME types (HTML, JSON, JPEG, etc.)</li>
+        <li>✅ User registration and login API</li>
+        <li>✅ Redirect handling in client</li>
+    </ul>
+
+    <div class="api-section">
+        <h2>API Endpoints</h2>
+        
+        <h3>User Registration</h3>
+        <p><strong>POST</strong> <code>/api/register</code></p>
+        <p>Parameters: <code>username</code>, <code>password</code></p>
+        
+        <h3>User Login</h3>
+        <p><strong>POST</strong> <code>/api/login</code></p>
+        <p>Parameters: <code>username</code>, <code>password</code></p>
+        
+        <h3>Example using curl:</h3>
+        <pre><code>curl -X POST http://localhost:8080/api/register \
+  -d "username=newuser&password=mypassword"</code></pre>
+    </div>
+
+    <h2>Test Pages</h2>
+    <ul>
+        <li><a href="/login.html">Login Page</a></li>
+        <li><a href="/register.html">Register Page</a></li>
+        <li><a href="/nonexistent.html">404 Test Page</a></li>
+    </ul>
+
+    <h2>Server Information</h2>
+    <p>This server supports:</p>
+    <ul>
+        <li>Static file serving from <code>webroot/</code> directory</li>
+        <li>Automatic MIME type detection</li>
+        <li>HTTP keep-alive connections</li>
+        <li>Proper error handling with appropriate status codes</li>
+    </ul>
+</body>
+</html>
