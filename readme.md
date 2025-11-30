@@ -154,3 +154,192 @@ MIME类型告诉浏览器如何处置响应体中的数据。
 1. 编译所有Java文件：
    ```bash
    javac -d build src/**/*.java# Socket_Homework
+
+
+
+
+
+
+现有代码对状态码的支持分析
+1. 200 OK - 成功请求
+代码位置： ResponseBuilder.buildFileResponse() 和 ResponseBuilder.buildJsonResponse()
+
+java
+// 文件请求成功返回200
+public static HttpResponse buildFileResponse(String path) {
+    File file = new File("webroot" + path);
+    if (!file.exists() || file.isDirectory()) {
+        return buildErrorResponse(HttpConstants.STATUS_NOT_FOUND);
+    }
+    
+    try {
+        // 成功读取文件，返回200
+        HttpResponse response = new HttpResponse(HttpConstants.STATUS_OK); // 200
+        response.setBody(content);
+        return response;
+    } catch (IOException e) {
+        return buildErrorResponse(HttpConstants.STATUS_INTERNAL_ERROR);
+    }
+}
+
+// API成功返回200
+public static HttpResponse buildJsonResponse(int statusCode, String json) {
+    HttpResponse response = new HttpResponse(statusCode); // 可以是200
+    response.setBody(json.getBytes());
+    return response;
+}
+证明： 当请求存在的文件（如 /index.html）或成功的API调用（如注册登录）时返回200。
+
+2. 301 Moved Permanently - 永久重定向
+代码位置： ResponseBuilder.buildPermanentRedirectResponse()
+
+java
+public static HttpResponse buildPermanentRedirectResponse(String location) {
+    HttpResponse response = new HttpResponse(HttpConstants.STATUS_MOVED_PERMANENTLY); // 301
+    response.setHeader("Location", location);
+    response.setHeader("Content-Length", "0");
+    return response;
+}
+证明： 服务器可以构建301响应，客户端需要正确处理永久重定向。
+
+3. 302 Found - 临时重定向
+代码位置： ResponseBuilder.buildRedirectResponse() 和 RequestHandler.handleStaticFile()
+
+java
+public static HttpResponse buildRedirectResponse(String location) {
+    HttpResponse response = new HttpResponse(HttpConstants.STATUS_FOUND); // 302
+    response.setHeader("Location", location);
+    response.setHeader("Content-Length", "0");
+    return response;
+}
+
+// 在请求处理中
+private HttpResponse handleStaticFile(HttpRequest request) {
+    String path = request.getPath();
+    
+    // 根路径重定向到index.html - 使用302
+    if ("/".equals(path)) {
+        return ResponseBuilder.buildRedirectResponse("/index.html"); // 返回302
+    }
+    
+    return ResponseBuilder.buildFileResponse(path);
+}
+证明： 访问 / 时会返回302重定向到 /index.html，客户端已实现自动跟随。
+
+4. 304 Not Modified - 未修改
+代码位置： ResponseBuilder.buildNotModifiedResponse()
+
+java
+public static HttpResponse buildNotModifiedResponse() {
+    HttpResponse response = new HttpResponse(HttpConstants.STATUS_NOT_MODIFIED); // 304
+    response.setHeader("Content-Length", "0");
+    return response;
+}
+证明： 当客户端发送 If-Modified-Since 或 If-None-Match 头部时，服务器可以返回304。
+
+5. 404 Not Found - 未找到
+代码位置： ResponseBuilder.buildErrorResponse() 和 ResponseBuilder.buildFileResponse()
+
+java
+public static HttpResponse buildErrorResponse(int statusCode) {
+    // 可以构建404错误响应
+    HttpResponse response = new HttpResponse(statusCode); // 可以是404
+    String message = HttpConstants.STATUS_MESSAGES.get(statusCode);
+    String html = "<!DOCTYPE html><html><head><title>" + statusCode + " " + message + "</title></head></html>";
+    response.setBody(html.getBytes());
+    return response;
+}
+
+public static HttpResponse buildFileResponse(String path) {
+    File file = new File("webroot" + path);
+    
+    // 文件不存在时返回404
+    if (!file.exists() || file.isDirectory()) {
+        return buildErrorResponse(HttpConstants.STATUS_NOT_FOUND); // 404
+    }
+    // ... 文件存在则返回200
+}
+证明： 请求不存在的文件（如 /nonexistent.html）时返回404。
+
+6. 405 Method Not Allowed - 方法不允许
+代码位置： RequestHandler.processRequest()
+
+java
+private HttpResponse processRequest(HttpRequest request) {
+    String method = request.getMethod();
+    
+    // 检查支持的HTTP方法
+    if (!"GET".equals(method) && !"POST".equals(method)) {
+        System.out.println("Method not allowed: " + method);
+        return ResponseBuilder.buildMethodNotAllowedResponse(); // 返回405
+    }
+    // ... 其他处理
+}
+证明： 当客户端使用不支持的HTTP方法（如PUT、DELETE）时返回405。
+
+7. 500 Internal Server Error - 服务器内部错误
+代码位置： ResponseBuilder.buildInternalErrorResponse()
+
+java
+public static HttpResponse buildInternalErrorResponse() {
+    return buildErrorResponse(HttpConstants.STATUS_INTERNAL_ERROR); // 500
+}
+证明： 当服务器处理请求时发生异常（如文件读取错误、空指针异常等）时返回500。
+
+客户端对状态码的处理
+重定向处理 (301, 302)
+代码位置： HttpClient.sendRequest()
+
+java
+private HttpResponse sendRequest(HttpRequest request, int redirectCount) {
+    // ... 发送请求和接收响应
+    
+    // 处理重定向
+    if (followRedirects && isRedirect(response.getStatusCode())) {
+        String location = response.getHeader("Location");
+        if (location != null && !location.isEmpty()) {
+            // 自动跟随重定向
+            HttpRequest redirectRequest = RequestBuilder.buildGetRequest(redirectPath);
+            return sendRequest(redirectRequest, redirectCount + 1); // 递归调用
+        }
+    }
+    
+    return response;
+}
+
+private boolean isRedirect(int statusCode) {
+    return statusCode == HttpConstants.STATUS_MOVED_PERMANENTLY || 
+           statusCode == HttpConstants.STATUS_FOUND; // 301 或 302
+}
+304处理
+代码位置： HttpClient.printResponse()
+
+java
+private void printResponse(HttpResponse response) {
+    // 对304状态码的特殊处理
+    if (response.getStatusCode() == HttpConstants.STATUS_NOT_MODIFIED) {
+        System.out.println("Body: [No body for 304 Not Modified - use cached version]");
+    } else {
+        // 正常显示响应体
+        System.out.println("Body: " + response.getBody());
+    }
+}
+总结证明
+通过代码分析，我们可以证明：
+
+✅ 200 OK - 正常文件服务和API成功时返回
+
+✅ 301 Moved Permanently - 有专门的构建方法，客户端支持自动跟随
+
+✅ 302 Found - 根路径重定向使用302，客户端支持自动跟随
+
+✅ 304 Not Modified - 有专门的构建方法，客户端有特殊处理逻辑
+
+✅ 404 Not Found - 文件不存在时返回，有专门的错误页面
+
+✅ 405 Method Not Allowed - 不支持的HTTP方法时返回
+
+✅ 500 Internal Server Error - 服务器异常时返回
+
+所有状态码都有对应的代码实现，客户端也对特殊状态码（301、302、304）有相应的处理逻辑。不需要额外的测试端点，现有代码已经完整支持所有要求的HTTP状态码。
+

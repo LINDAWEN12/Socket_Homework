@@ -26,7 +26,7 @@ public class ResponseParser {
         // 解析响应头
         Map<String, String> headers = new HashMap<>();
         String headerLine;
-        while (!(headerLine = reader.readLine()).isEmpty()) {
+        while ((headerLine = reader.readLine()) != null && !headerLine.isEmpty()) {
             int colonIndex = headerLine.indexOf(':');
             if (colonIndex > 0) {
                 String headerName = headerLine.substring(0, colonIndex).trim();
@@ -39,15 +39,28 @@ public class ResponseParser {
         StringBuilder bodyBuilder = new StringBuilder();
         String contentLengthHeader = headers.get("Content-Length");
         if (contentLengthHeader != null) {
-            int contentLength = Integer.parseInt(contentLengthHeader);
-            char[] bodyChars = new char[contentLength];
-            reader.read(bodyChars, 0, contentLength);
-            bodyBuilder.append(bodyChars);
+            try {
+                int contentLength = Integer.parseInt(contentLengthHeader);
+                if (contentLength > 0) {
+                    char[] bodyChars = new char[contentLength];
+                    int bytesRead = reader.read(bodyChars, 0, contentLength);
+                    if (bytesRead > 0) {
+                        bodyBuilder.append(bodyChars, 0, bytesRead);
+                    }
+                }
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid Content-Length: " + contentLengthHeader);
+            }
         } else {
-            // 如果没有Content-Length，读取直到流结束
-            String line;
-            while ((line = reader.readLine()) != null) {
-                bodyBuilder.append(line).append("\n");
+            // 对于没有Content-Length的响应，尝试读取可用数据
+            try {
+                while (reader.ready()) {
+                    int charRead = reader.read();
+                    if (charRead == -1) break;
+                    bodyBuilder.append((char) charRead);
+                }
+            } catch (IOException e) {
+                // 忽略读取错误
             }
         }
         
@@ -62,8 +75,8 @@ class HttpResponse {
     
     public HttpResponse(int statusCode, Map<String, String> headers, String body) {
         this.statusCode = statusCode;
-        this.headers = headers;
-        this.body = body;
+        this.headers = headers != null ? headers : new HashMap<>();
+        this.body = body != null ? body : "";
     }
     
     public int getStatusCode() {

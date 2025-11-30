@@ -93,10 +93,15 @@ public class ResponseBuilder {
     }
     
     public static HttpResponse buildRedirectResponse(String location) {
-        HttpResponse response = new HttpResponse(HttpConstants.STATUS_FOUND);
-        response.setHeader("Location", location);
-        return response;
-    }
+    System.out.println("Building redirect response to: " + location);
+    
+    HttpResponse response = new HttpResponse(HttpConstants.STATUS_FOUND);
+    response.setHeader("Location", location);
+    response.setHeader("Content-Length", "0");
+    // 确保重定向响应有正确的连接头
+    response.setHeader("Connection", "keep-alive");
+    return response;
+}
 }
 
 class HttpResponse {
@@ -115,14 +120,25 @@ class HttpResponse {
     public void setStatusCode(int statusCode) { this.statusCode = statusCode; }
     
     public Map<String, String> getHeaders() { return headers; }
-    public String getHeader(String name) { return headers.get(name.toLowerCase()); }
+    
+    // 修复：不转换大小写，保持原始头部名称
+    public String getHeader(String name) { 
+        // 先尝试精确匹配
+        String value = headers.get(name);
+        if (value != null) {
+            return value;
+        }
+        // 如果没有找到，尝试小写匹配（向后兼容）
+        return headers.get(name.toLowerCase());
+    }
     
     public void setHeader(String name, String value) {
-        headers.put(name.toLowerCase(), value);
+        // 保持原始头部名称，不转换为小写
+        headers.put(name, value);
     }
     
     public void setHeaderIfAbsent(String name, String value) {
-        headers.putIfAbsent(name.toLowerCase(), value);
+        headers.putIfAbsent(name, value);
     }
     
     public byte[] getBody() { return body; }

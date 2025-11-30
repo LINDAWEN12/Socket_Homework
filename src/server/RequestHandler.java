@@ -137,11 +137,10 @@ public class RequestHandler implements Runnable {
     private HttpResponse handleStaticFile(HttpRequest request) {
         String path = request.getPath();
         
-        // 重定向根路径到index.html
+        // 重定向根路径到index.html - 修复这里！
         if ("/".equals(path)) {
-            HttpResponse response = new HttpResponse(HttpConstants.STATUS_FOUND);
-            response.setHeader("Location", "/index.html");
-            return response;
+            System.out.println("Redirecting / to /index.html");
+            return ResponseBuilder.buildRedirectResponse("/index.html");
         }
         
         // 处理其他静态文件

@@ -11,7 +11,18 @@ public class RequestBuilder {
         request.setHeader("Host", HttpConstants.SERVER_HOST + ":" + HttpConstants.SERVER_PORT);
         request.setHeader("User-Agent", "SimpleJavaHTTPClient/1.0");
         request.setHeader("Accept", "text/html,application/json,image/jpeg,*/*");
+        request.setHeader("Accept-Encoding", "identity");
         request.setHeader("Connection", "keep-alive");
+        return request;
+    }
+    
+    public static HttpRequest buildGetRequest(String path, Map<String, String> headers) {
+        HttpRequest request = buildGetRequest(path);
+        if (headers != null) {
+            for (Map.Entry<String, String> header : headers.entrySet()) {
+                request.setHeader(header.getKey(), header.getValue());
+            }
+        }
         return request;
     }
     
@@ -21,6 +32,7 @@ public class RequestBuilder {
         request.setHeader("User-Agent", "SimpleJavaHTTPClient/1.0");
         request.setHeader("Content-Type", "application/x-www-form-urlencoded");
         request.setHeader("Content-Length", String.valueOf(body.length()));
+        request.setHeader("Accept", "application/json");
         request.setHeader("Connection", "keep-alive");
         request.setBody(body);
         return request;
@@ -58,6 +70,14 @@ class HttpRequest {
     
     public void setBody(String body) {
         this.body = body;
+    }
+    
+    public String getMethod() {
+        return method;
+    }
+    
+    public String getPath() {
+        return path;
     }
     
     @Override

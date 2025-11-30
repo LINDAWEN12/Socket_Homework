@@ -30,7 +30,7 @@ public class HttpClient {
     
     private HttpResponse sendRequest(HttpRequest request, int redirectCount) {
         if (redirectCount > 5) {
-            System.err.println("Too many redirects");
+            System.err.println("Error: Too many redirects");
             return null;
         }
         
@@ -45,21 +45,29 @@ public class HttpClient {
             // 解析响应
             HttpResponse response = ResponseParser.parse(in);
             
-            // 处理重定向
+            if (response == null) {
+                return null;
+            }
+            
+            // 处理重定向 (301, 302)
             if (followRedirects && isRedirect(response.getStatusCode())) {
                 String location = response.getHeader("Location");
-                if (location != null) {
-                    System.out.println("Redirecting to: " + location);
-                    
-                    // 解析新的URL
-                    URL redirectUrl = new URL(location);
-                    if (!redirectUrl.getHost().equals(host) || redirectUrl.getPort() != port) {
-                        System.out.println("Cross-host redirect not supported in this simple client");
-                        return response;
+                if (location != null && !location.isEmpty()) {
+                    // 解析重定向URL
+                    String redirectPath;
+                    if (location.startsWith("http")) {
+                        URL redirectUrl = new URL(location);
+                        if (!redirectUrl.getHost().equals(host) || redirectUrl.getPort() != port) {
+                            System.out.println("Cross-host redirect not supported: " + location);
+                            return response;
+                        }
+                        redirectPath = redirectUrl.getPath();
+                    } else {
+                        redirectPath = location;
                     }
                     
-                    // 创建新的GET请求
-                    HttpRequest redirectRequest = RequestBuilder.buildGetRequest(redirectUrl.getPath());
+                    // 创建新的GET请求进行重定向
+                    HttpRequest redirectRequest = RequestBuilder.buildGetRequest(redirectPath);
                     return sendRequest(redirectRequest, redirectCount + 1);
                 }
             }
@@ -69,108 +77,89 @@ public class HttpClient {
         } catch (IOException e) {
             System.err.println("Client error: " + e.getMessage());
             return null;
+        } catch (Exception e) {
+            System.err.println("Unexpected error: " + e.getMessage());
+            return null;
         }
     }
     
-    private boolean isRedirect(int statusCode) {
+    private static boolean isRedirect(int statusCode) {
         return statusCode == HttpConstants.STATUS_MOVED_PERMANENTLY || 
                statusCode == HttpConstants.STATUS_FOUND;
     }
-    
-    /**
-     * 交互式命令行客户端
-     */
-    public void startInteractive() {
-        Scanner scanner = new Scanner(System.in);
-        System.out.println("Simple HTTP Client (Type 'quit' to exit)");
-        
-        while (true) {
-            System.out.print("\nEnter URL path (e.g., /index.html): ");
-            String path = scanner.nextLine().trim();
-            
-            if ("quit".equalsIgnoreCase(path)) {
-                break;
-            }
-            
-            if (path.isEmpty()) {
-                path = "/";
-            }
-            
-            HttpRequest request = RequestBuilder.buildGetRequest(path);
-            HttpResponse response = sendRequest(request);
-            
-            if (response != null) {
-                printResponse(response);
-            } else {
-                System.out.println("Failed to get response");
-            }
-        }
-        
-        scanner.close();
-    }
-    
-    private void printResponse(HttpResponse response) {
-        System.out.println("\n=== HTTP Response ===");
-        System.out.println("Status: " + response.getStatusCode() + " " + 
-                          HttpConstants.STATUS_MESSAGES.get(response.getStatusCode()));
-        
-        System.out.println("\nHeaders:");
-        for (String key : response.getHeaders().keySet()) {
-            System.out.println("  " + key + ": " + response.getHeader(key));
-        }
-        
-        System.out.println("\nBody:");
-        System.out.println(response.getBody());
-    }
 
+    /**
+     * 演示使用方法 - 符合题目要求的命令行方式
+     */
     public static void main(String[] args) {
         HttpClient client = new HttpClient();
         
-        if (args.length > 0 && "-i".equals(args[0])) {
-            // 交互式模式
-            client.startInteractive();
-        } else {
-            // 测试模式
-            testClient(client);
-        }
+        // 演示各种请求 - 符合题目要求
+        demonstrateClient(client);
     }
     
-    private static void testClient(HttpClient client) {
-        System.out.println("Testing HTTP Client...");
+    private static void demonstrateClient(HttpClient client) {
+        System.out.println("=== HTTP Client Demonstration ===\n");
         
-        // 测试GET请求
-        System.out.println("\n1. Testing GET /index.html");
+        // 1. 测试普通GET请求
+        System.out.println("1. GET /index.html");
         HttpRequest getRequest = RequestBuilder.buildGetRequest("/index.html");
         HttpResponse response = client.sendRequest(getRequest);
-        if (response != null) {
-            System.out.println("Status: " + response.getStatusCode());
-            System.out.println("Body length: " + response.getBody().length() + " characters");
-        }
+        printResponse(response);
         
-        // 测试重定向
-        System.out.println("\n2. Testing redirect from / to /index.html");
+        // 2. 测试重定向 (题目要求的功能)
+        System.out.println("\n2. GET / (测试重定向)");
         HttpRequest rootRequest = RequestBuilder.buildGetRequest("/");
         HttpResponse redirectResponse = client.sendRequest(rootRequest);
-        if (redirectResponse != null) {
-            System.out.println("Final Status: " + redirectResponse.getStatusCode());
-        }
+        printResponse(redirectResponse);
         
-        // 测试POST请求（注册）
-        System.out.println("\n3. Testing POST /api/register");
-        String registerData = "username=testuser&password=testpass";
+        // 3. 测试POST请求 - 注册 (题目要求的功能)
+        System.out.println("\n3. POST /api/register");
+        String registerData = "username=demo_user&password=demo_pass";
         HttpRequest postRequest = RequestBuilder.buildPostRequest("/api/register", registerData);
         HttpResponse postResponse = client.sendRequest(postRequest);
-        if (postResponse != null) {
-            System.out.println("Status: " + postResponse.getStatusCode());
-            System.out.println("Response: " + postResponse.getBody());
-        }
+        printResponse(postResponse);
         
-        // 测试不存在的文件
-        System.out.println("\n4. Testing GET /nonexistent.html");
+        // 4. 测试POST请求 - 登录 (题目要求的功能)
+        System.out.println("\n4. POST /api/login");
+        String loginData = "username=admin&password=admin123";
+        HttpRequest loginRequest = RequestBuilder.buildPostRequest("/api/login", loginData);
+        HttpResponse loginResponse = client.sendRequest(loginRequest);
+        printResponse(loginResponse);
+        
+        // 5. 测试404错误
+        System.out.println("\n5. GET /nonexistent.html (测试404)");
         HttpRequest notFoundRequest = RequestBuilder.buildGetRequest("/nonexistent.html");
         HttpResponse notFoundResponse = client.sendRequest(notFoundRequest);
-        if (notFoundResponse != null) {
-            System.out.println("Status: " + notFoundResponse.getStatusCode());
-        }
+        printResponse(notFoundResponse);
+        
+        System.out.println("\n=== Demonstration Completed ===");
     }
+    
+    private static void printResponse(HttpResponse response) {
+        if (response == null) {
+            System.out.println("  No response received");
+            return;
+        }
+        
+        System.out.println("  Status: " + response.getStatusCode() + " " + 
+                          HttpConstants.STATUS_MESSAGES.get(response.getStatusCode()));
+        
+        // 对于重定向，显示Location头
+        if (isRedirect(response.getStatusCode())) {
+            String location = response.getHeader("Location");
+            System.out.println("  Location: " + location);
+        }
+        
+        // 显示响应体前100个字符
+        String body = response.getBody();
+        if (body != null && !body.isEmpty()) {
+            String preview = body.length() > 100 ? body.substring(0, 100) + "..." : body;
+            System.out.println("  Body: " + preview.replace("\n", " "));
+        }
+        
+        System.out.println("  Body length: " + (body != null ? body.length() : 0) + " characters");
+    }
+    
+    
 }
