@@ -1,0 +1,26 @@
+{
+  "project": "Java HTTP Server",
+  "mimeTypes": [
+    {
+      "extension": "html",
+      "mimeType": "text/html",
+      "charset": "UTF-8"
+    },
+    {
+      "extension": "css",
+      "mimeType": "text/css",
+      "charset": "UTF-8"
+    },
+    {
+      "extension": "json",
+      "mimeType": "application/json",
+      "charset": "UTF-8"
+    },
+    {
+      "extension": "txt",
+      "mimeType": "text/plain",
+      "charset": "UTF-8"
+    }
+  ],
+  "testInfo": "这是一个JSON测试文件"
+}
