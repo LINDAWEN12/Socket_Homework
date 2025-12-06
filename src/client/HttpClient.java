@@ -5,35 +5,48 @@ import java.io.*;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.URL;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Scanner;
 
 public class HttpClient {
     private String host;
     private int port;
     private boolean followRedirects;
-    private Socket connection;  // 保持长连接
+    private Socket connection;
     private OutputStream out;
     private InputStream in;
     private boolean connected = false;
+    
+    private Map<String, CachedResponse> cache;
 
     public HttpClient(String host, int port) {
         this.host = host;
         this.port = port;
         this.followRedirects = true;
+        this.cache = new HashMap<>();
     }
 
     public HttpClient() {
         this(HttpConstants.SERVER_HOST, HttpConstants.SERVER_PORT);
+    }
+    
+    /**
+     * 清除缓存（用于测试）
+     */
+    public void clearCache() {
+        cache.clear();
+        System.out.println("  [Cache] Cache cleared");
     }
 
     /**
      * 发送HTTP请求并返回响应
      */
     public HttpResponse sendRequest(HttpRequest request) {
-        return sendRequest(request, 0);
+        return sendRequest(request, 0, request.getMethod());
     }
 
-    private HttpResponse sendRequest(HttpRequest request, int redirectCount) {
+    private HttpResponse sendRequest(HttpRequest request, int redirectCount, String originalMethod) {
         if (redirectCount > 5) {
             System.err.println("Error: Too many redirects");
             return null;
@@ -42,6 +55,21 @@ public class HttpClient {
         try (Socket socket = new Socket(host, port);
              OutputStream out = socket.getOutputStream();
              InputStream in = socket.getInputStream()) {
+            
+            // 检查缓存（仅对GET请求）
+            if ("GET".equals(request.getMethod())) {
+                CachedResponse cached = cache.get(request.getPath());
+                if (cached != null && !cached.isExpired()) {
+                    System.out.println("  [Cache] Found cached response for: " + request.getPath());
+                    // 添加条件请求头
+                    if (cached.getLastModified() != null) {
+                        request.setHeader("If-Modified-Since", cached.getLastModified());
+                    }
+                    if (cached.getEtag() != null) {
+                        request.setHeader("If-None-Match", cached.getEtag());
+                    }
+                }
+            }
             
             // 发送请求
             out.write(request.toString().getBytes(HttpConstants.DEFAULT_CHARSET));
@@ -54,16 +82,40 @@ public class HttpClient {
                 return null;
             }
             
+            int statusCode = response.getStatusCode();
+            
+            // 处理304 Not Modified
+            if (statusCode == HttpConstants.STATUS_NOT_MODIFIED) {
+                System.out.println("  [304] Resource not modified - using cached version");
+                CachedResponse cached = cache.get(request.getPath());
+                if (cached != null) {
+                    cached.updateTimestamp();
+                    return cached.getResponse();
+                }
+                return response;
+            }
+            
+            // 缓存成功的GET响应
+            if ("GET".equals(request.getMethod()) && statusCode == 200) {
+                String lastModified = response.getHeader("Last-Modified");
+                String etag = response.getHeader("ETag");
+                cache.put(request.getPath(), new CachedResponse(response, lastModified, etag));
+                System.out.println("  [Cache] Response cached for: " + request.getPath());
+            }
+            
             // 处理重定向 (301, 302)
-            if (followRedirects && isRedirect(response.getStatusCode())) {
+            if (followRedirects && isRedirect(statusCode)) {
+                System.out.println("  [" + statusCode + "] Redirect detected");
                 String location = response.getHeader("Location");
                 if (location != null && !location.isEmpty()) {
+                    System.out.println("  Redirecting to: " + location);
+                    
                     // 解析重定向URL
                     String redirectPath;
                     if (location.startsWith("http")) {
                         URL redirectUrl = new URL(location);
                         if (!redirectUrl.getHost().equals(host) || redirectUrl.getPort() != port) {
-                            System.out.println("Cross-host redirect not supported: " + location);
+                            System.out.println("  Cross-host redirect not supported: " + location);
                             return response;
                         }
                         redirectPath = redirectUrl.getPath();
@@ -71,9 +123,36 @@ public class HttpClient {
                         redirectPath = location;
                     }
                     
-                    // 创建新的GET请求进行重定向
-                    HttpRequest redirectRequest = RequestBuilder.buildGetRequest(redirectPath);
-                    return sendRequest(redirectRequest, redirectCount + 1);
+                    // 根据状态码决定重定向方法
+              
+HttpRequest redirectRequest;
+if (statusCode == HttpConstants.STATUS_MOVED_PERMANENTLY) {
+    // 301: 保持原始方法
+    redirectRequest = new HttpRequest(originalMethod, redirectPath, HttpConstants.HTTP_VERSION);
+    System.out.println("  [301] Permanent redirect - Keeping original method: " + originalMethod);
+    
+    // 复制请求体（如果是POST重定向）
+    if ("POST".equals(originalMethod) && request.getBody() != null) {
+        redirectRequest.setBody(request.getBody());
+        redirectRequest.setHeader("Content-Type", request.getHeader("Content-Type"));
+        redirectRequest.setHeader("Content-Length", String.valueOf(request.getBody().length()));
+        
+        // 复制其他必要的POST头
+        String contentType = request.getHeader("Content-Type");
+        if (contentType != null) {
+            redirectRequest.setHeader("Content-Type", contentType);
+        }
+    }
+} else {
+    // 302: 总是使用GET方法
+    redirectRequest = RequestBuilder.buildGetRequest(redirectPath);
+    System.out.println("  [302] Temporary redirect - Using GET method (request body will be lost)");
+}
+                    
+                    // 复制重要的请求头
+                    copyHeaders(request, redirectRequest);
+                    
+                    return sendRequest(redirectRequest, redirectCount + 1, originalMethod);
                 }
             }
             
@@ -86,6 +165,16 @@ public class HttpClient {
             System.err.println("Unexpected error: " + e.getMessage());
             return null;
         }
+    }
+    
+    /**
+     * 复制请求头
+     */
+    private void copyHeaders(HttpRequest source, HttpRequest target) {
+        target.setHeader("Host", source.getHeader("Host"));
+        target.setHeader("User-Agent", source.getHeader("User-Agent"));
+        target.setHeader("Accept", source.getHeader("Accept"));
+        target.setHeader("Accept-Encoding", source.getHeader("Accept-Encoding"));
     }
 
     /**
@@ -114,6 +203,8 @@ public class HttpClient {
                statusCode == HttpConstants.STATUS_FOUND;
     }
 
+    // 以下是main方法和演示代码，保持不变...
+    
     /**
      * 演示使用方法 - 符合题目要求的命令行方式
      */
@@ -124,47 +215,79 @@ public class HttpClient {
         demonstrateClient(client);
     }
     
-    private static void demonstrateClient(HttpClient client) {
-        System.out.println("=== HTTP Client Demonstration ===\n");
-        
-        // 1. 测试普通GET请求
-        System.out.println("1. GET /index.html");
-        HttpRequest getRequest = RequestBuilder.buildGetRequest("/index.html");
-        HttpResponse response = client.sendRequest(getRequest);
-        printResponse(response);
-        
-        // 2. 测试重定向 (题目要求的功能)
-        System.out.println("\n2. GET / (测试重定向)");
-        HttpRequest rootRequest = RequestBuilder.buildGetRequest("/");
-        HttpResponse redirectResponse = client.sendRequest(rootRequest);
-        printResponse(redirectResponse);
-        
-        // 3. 测试POST请求 - 注册 (题目要求的功能)
-        System.out.println("\n3. POST /api/register");
-        String registerData = "username=demo_user&password=demo_pass";
-        HttpRequest postRequest = RequestBuilder.buildPostRequest("/api/register", registerData);
-        HttpResponse postResponse = client.sendRequest(postRequest);
-        printResponse(postResponse);
-        
-        // 4. 测试POST请求 - 登录 (题目要求的功能)
-        System.out.println("\n4. POST /api/login");
-        String loginData = "username=admin&password=admin123";
-        HttpRequest loginRequest = RequestBuilder.buildPostRequest("/api/login", loginData);
-        HttpResponse loginResponse = client.sendRequest(loginRequest);
-        printResponse(loginResponse);
-        
-        // 5. 测试404错误
-        System.out.println("\n5. GET /nonexistent.html (测试404)");
-        HttpRequest notFoundRequest = RequestBuilder.buildGetRequest("/nonexistent.html");
-        HttpResponse notFoundResponse = client.sendRequest(notFoundRequest);
-        printResponse(notFoundResponse);
-        
-        System.out.println("\n=== Demonstration Completed ===");
-
-        // 6. 测试长链接
-        keepTestClient(client);
-
-    }
+   private static void demonstrateClient(HttpClient client) {
+    System.out.println("=== HTTP Client Demonstration ===\n");
+    
+    // 清空缓存开始测试
+    client.clearCache();
+    
+    // 1. 测试302临时重定向（根路径）
+    System.out.println("1. GET / (测试302临时重定向)");
+    HttpRequest rootRequest = RequestBuilder.buildGetRequest("/");
+    HttpResponse response = client.sendRequest(rootRequest);
+    printResponse(response);
+    
+    // 2. 测试301永久重定向（GET）
+    System.out.println("\n2. GET /old-page (测试301永久重定向 - GET)");
+    HttpRequest redirect301Request = RequestBuilder.buildGetRequest("/old-page");
+    HttpResponse redirect301Response = client.sendRequest(redirect301Request);
+    printResponse(redirect301Response);
+    
+    // 3. 测试302临时重定向（GET）
+    System.out.println("\n3. GET /temp (测试302临时重定向 - GET)");
+    HttpRequest redirect302Request = RequestBuilder.buildGetRequest("/temp");
+    HttpResponse redirect302Response = client.sendRequest(redirect302Request);
+    printResponse(redirect302Response);
+    
+    // 4. 测试缓存机制 - 请求同一个资源两次
+    System.out.println("\n4. GET /index.html (第一次请求，将被缓存)");
+    HttpRequest getRequest = RequestBuilder.buildGetRequest("/index.html");
+    response = client.sendRequest(getRequest);
+    printResponse(response);
+    
+    // 5. 测试304缓存 - 同一个请求应该使用缓存或收到304
+    System.out.println("\n5. GET /index.html (第二次请求，测试304缓存)");
+    response = client.sendRequest(getRequest);
+    printResponse(response);
+    
+    // 6. 测试301永久重定向（POST）- 应该保持POST方法
+    System.out.println("\n6. POST /old-form (测试301永久重定向 - POST)");
+    String postData = "username=test&password=test123";
+    HttpRequest post301Request = RequestBuilder.buildPostRequest("/old-form", postData);
+    HttpResponse post301Response = client.sendRequest(post301Request);
+    printResponse(post301Response);
+    
+    // 7. 测试302临时重定向（POST）- 应该转为GET方法
+    System.out.println("\n7. POST /temp-post (测试302临时重定向 - POST)");
+    HttpRequest post302Request = RequestBuilder.buildPostRequest("/temp-post", postData);
+    HttpResponse post302Response = client.sendRequest(post302Request);
+    printResponse(post302Response);
+    
+    // 8. 测试POST登录
+    System.out.println("\n8. POST /api/login (测试登录)");
+    String loginData = "username=admin&password=admin123";
+    HttpRequest loginRequest = RequestBuilder.buildPostRequest("/api/login", loginData);
+    HttpResponse loginResponse = client.sendRequest(loginRequest);
+    printResponse(loginResponse);
+    
+    // 9. 测试注册
+    System.out.println("\n9. POST /api/register (测试注册)");
+    String registerData = "username=newuser&password=newpass123";
+    HttpRequest registerRequest = RequestBuilder.buildPostRequest("/api/register", registerData);
+    HttpResponse registerResponse = client.sendRequest(registerRequest);
+    printResponse(registerResponse);
+    
+    // 10. 测试404错误
+    System.out.println("\n10. GET /nonexistent.html (测试404)");
+    HttpRequest notFoundRequest = RequestBuilder.buildGetRequest("/nonexistent.html");
+    HttpResponse notFoundResponse = client.sendRequest(notFoundRequest);
+    printResponse(notFoundResponse);
+    
+    System.out.println("\n=== Basic Demonstration Completed ===");
+    
+    // 11. 测试长链接
+    keepTestClient(client);
+}
 
     private static void keepTestClient(HttpClient client) {
         System.out.println("\n6. test keep alive");
@@ -260,29 +383,40 @@ public class HttpClient {
     }
     
     private static void printResponse(HttpResponse response) {
-        if (response == null) {
-            System.out.println("  No response received");
-            return;
-        }
-        
-        System.out.println("  Status: " + response.getStatusCode() + " " + 
-                          HttpConstants.STATUS_MESSAGES.get(response.getStatusCode()));
-        
-        // 对于重定向，显示Location头
-        if (isRedirect(response.getStatusCode())) {
-            String location = response.getHeader("Location");
-            System.out.println("  Location: " + location);
-        }
-        
-        // 显示响应体前100个字符
-        String body = response.getBody();
-        if (body != null && !body.isEmpty()) {
-            String preview = body.length() > 100 ? body.substring(0, 100) + "..." : body;
-            System.out.println("  Body: " + preview.replace("\n", " "));
-        }
-        
-        System.out.println("  Body length: " + (body != null ? body.length() : 0) + " characters");
+    if (response == null) {
+        System.out.println("  No response received");
+        return;
     }
+    
+    int statusCode = response.getStatusCode();
+    System.out.print("  Status: " + statusCode + " " + 
+                    HttpConstants.STATUS_MESSAGES.getOrDefault(statusCode, "Unknown"));
+    
+    // 对于重定向，显示Location头
+    if (isRedirect(statusCode)) {
+        String location = response.getHeader("Location");
+        if (location != null) {
+            System.out.print(" -> Redirect to: " + location);
+        }
+    }
+    
+    // 对于304，显示缓存信息
+    if (statusCode == HttpConstants.STATUS_NOT_MODIFIED) {
+        System.out.print(" [Using cached version]");
+    }
+    
+    System.out.println();
+    
+    // 显示响应体前80个字符
+    String body = response.getBody();
+    if (body != null && !body.isEmpty()) {
+        String preview = body.length() > 80 ? body.substring(0, 80) + "..." : body;
+        preview = preview.replace("\n", " ").replace("\r", "");
+        System.out.println("  Body preview: " + preview);
+    }
+    
+    System.out.println("  Body length: " + (body != null ? body.length() : 0) + " characters");
+}
 
     // 连接到服务器
     public void connect() throws IOException {
@@ -309,5 +443,42 @@ public class HttpClient {
             connected = false;
         }
     }
+}
 
+/**
+ * 缓存响应类
+ */
+class CachedResponse {
+    private HttpResponse response;
+    private String lastModified;
+    private String etag;
+    private long timestamp;
+    private static final long CACHE_DURATION = 300000; // 5分钟缓存
+    
+    public CachedResponse(HttpResponse response, String lastModified, String etag) {
+        this.response = response;
+        this.lastModified = lastModified;
+        this.etag = etag;
+        this.timestamp = System.currentTimeMillis();
+    }
+    
+    public HttpResponse getResponse() {
+        return response;
+    }
+    
+    public String getLastModified() {
+        return lastModified;
+    }
+    
+    public String getEtag() {
+        return etag;
+    }
+    
+    public boolean isExpired() {
+        return System.currentTimeMillis() - timestamp > CACHE_DURATION;
+    }
+    
+    public void updateTimestamp() {
+        this.timestamp = System.currentTimeMillis();
+    }
 }

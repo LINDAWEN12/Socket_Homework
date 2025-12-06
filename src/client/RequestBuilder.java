@@ -71,6 +71,10 @@ class HttpRequest {
     public void setBody(String body) {
         this.body = body;
     }
+
+      public String getBody() {
+        return body;
+    }
     
     public String getMethod() {
         return method;
@@ -79,6 +83,11 @@ class HttpRequest {
     public String getPath() {
         return path;
     }
+
+        public String getHeader(String name) {
+        return headers.get(name);
+    }
+    
     
     @Override
     public String toString() {

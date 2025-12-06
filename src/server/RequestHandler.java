@@ -170,18 +170,41 @@ public class RequestHandler implements Runnable {
         }
     }
     
-    private HttpResponse handleStaticFile(HttpRequest request) {
-        String path = request.getPath();
-        
-        // 重定向根路径到index.html - 修复这里！
-        if ("/".equals(path)) {
-            System.out.println("Redirecting / to /index.html");
-            return ResponseBuilder.buildRedirectResponse("/index.html");
-        }
-        
-        // 处理其他静态文件
-        return ResponseBuilder.buildFileResponse(path);
+   private HttpResponse handleStaticFile(HttpRequest request) {
+    String path = request.getPath();
+    
+    // 重定向根路径到index.html - 302临时重定向
+    if ("/".equals(path)) {
+        System.out.println("Redirecting / to /index.html (302)");
+        return ResponseBuilder.buildRedirectResponse("/index.html");
     }
+    
+    // 添加301永久重定向测试端点
+    if ("/old-page".equals(path)) {
+        System.out.println("Redirecting /old-page to /index.html (301)");
+        return ResponseBuilder.buildPermanentRedirectResponse("/index.html");
+    }
+    
+    // 添加302临时重定向测试端点
+    if ("/temp".equals(path)) {
+        System.out.println("Redirecting /temp to /index.html (302)");
+        return ResponseBuilder.buildRedirectResponse("/index.html");
+    }
+    
+    // 添加POST重定向测试端点
+    if ("/old-form".equals(path) && "POST".equals(request.getMethod())) {
+        System.out.println("Redirecting POST /old-form to /index.html (301)");
+        return ResponseBuilder.buildPermanentRedirectResponse("/index.html");
+    }
+    
+    if ("/temp-post".equals(path) && "POST".equals(request.getMethod())) {
+        System.out.println("Redirecting POST /temp-post to /index.html (302)");
+        return ResponseBuilder.buildRedirectResponse("/index.html");
+    }
+    
+    // 处理静态文件（添加Last-Modified头支持304）
+    return ResponseBuilder.buildFileResponse(path);
+}
     
     private void closeConnection() {
         try {

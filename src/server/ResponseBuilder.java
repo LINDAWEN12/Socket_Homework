@@ -46,30 +46,55 @@ public class ResponseBuilder {
         out.flush();
     }
     
-    public static HttpResponse buildFileResponse(String path) {
-        File file = new File("webroot" + path);
-        
-        if (!file.exists() || file.isDirectory()) {
-            return buildErrorResponse(HttpConstants.STATUS_NOT_FOUND);
-        }
-        
-        try {
-            FileInputStream fis = new FileInputStream(file);
-            byte[] content = new byte[(int) file.length()];
-            fis.read(content);
-            fis.close();
-            
-            HttpResponse response = new HttpResponse(HttpConstants.STATUS_OK);
-            response.setBody(content);
-            response.setHeader("Content-Type", HttpUtils.getMimeType(path));
-            response.setHeader("Content-Length", String.valueOf(content.length));
-            
-            return response;
-            
-        } catch (IOException e) {
-            return buildErrorResponse(HttpConstants.STATUS_INTERNAL_ERROR);
-        }
+   public static HttpResponse buildFileResponse(String path) {
+    File file = new File("webroot" + path);
+    
+    if (!file.exists() || file.isDirectory()) {
+        return buildErrorResponse(HttpConstants.STATUS_NOT_FOUND);
     }
+    
+    try {
+        FileInputStream fis = new FileInputStream(file);
+        byte[] content = new byte[(int) file.length()];
+        fis.read(content);
+        fis.close();
+        
+        HttpResponse response = new HttpResponse(HttpConstants.STATUS_OK);
+        response.setBody(content);
+        response.setHeader("Content-Type", HttpUtils.getMimeType(path));
+        response.setHeader("Content-Length", String.valueOf(content.length));
+        
+        // 添加Last-Modified头支持304
+        long lastModified = file.lastModified();
+        if (lastModified > 0) {
+            response.setHeader("Last-Modified", new Date(lastModified).toString());
+        }
+        
+        return response;
+        
+    } catch (IOException e) {
+        return buildErrorResponse(HttpConstants.STATUS_INTERNAL_ERROR);
+    }
+}
+
+public static HttpResponse buildRedirectResponse(String location) {
+    System.out.println("Building 302 redirect response to: " + location);
+    
+    HttpResponse response = new HttpResponse(HttpConstants.STATUS_FOUND);
+    response.setHeader("Location", location);
+    response.setHeader("Content-Length", "0");
+    return response;
+}
+
+// 添加301永久重定向
+public static HttpResponse buildPermanentRedirectResponse(String location) {
+    System.out.println("Building 301 redirect response to: " + location);
+    
+    HttpResponse response = new HttpResponse(HttpConstants.STATUS_MOVED_PERMANENTLY);
+    response.setHeader("Location", location);
+    response.setHeader("Content-Length", "0");
+    return response;
+}
     
     public static HttpResponse buildJsonResponse(int statusCode, String json) {
         HttpResponse response = new HttpResponse(statusCode);
@@ -92,16 +117,6 @@ public class ResponseBuilder {
         return response;
     }
     
-    public static HttpResponse buildRedirectResponse(String location) {
-    System.out.println("Building redirect response to: " + location);
-    
-    HttpResponse response = new HttpResponse(HttpConstants.STATUS_FOUND);
-    response.setHeader("Location", location);
-    response.setHeader("Content-Length", "0");
-    // 确保重定向响应有正确的连接头
-    response.setHeader("Connection", "keep-alive");
-    return response;
-}
 }
 
 class HttpResponse {
