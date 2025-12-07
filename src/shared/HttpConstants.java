@@ -5,7 +5,7 @@ import java.util.Map;
 
 public class HttpConstants {
     // 服务器配置
-    public static final int SERVER_PORT = 8080;
+    public static final int SERVER_PORT = 8022;
     public static final String SERVER_HOST = "localhost";
     
     // HTTP 版本
